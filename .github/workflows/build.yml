@@ -1,0 +1,157 @@
+# Bitwarden Browser Extension Build with fakePremium Patch
+# Automatically pulls latest source and applies premium unlock patch
+name: Build Bitwarden with Premium Patch
+
+on:
+  workflow_dispatch:
+    inputs: {}
+  push:
+    branches: [master, main]
+  schedule:
+    # Build every Sunday at 12:00 UTC
+    - cron: "0 12 * * 0"
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  setup:
+    name: Setup
+    runs-on: ubuntu-24.04
+    outputs:
+      latest_browser_tag: ${{ steps.gen_vars.outputs.latest_browser_tag }}
+      node_version: ${{ steps.retrieve-node-version.outputs.node_version }}
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Clone Bitwarden clients
+        run: git clone https://github.com/bitwarden/clients.git
+
+      - name: Get Latest Browser Tag
+        id: gen_vars
+        working-directory: clients
+        run: |
+          git fetch --tags
+          tags=$(git tag --sort=-creatordate)
+          latest_browser_tag=""
+          for tag in $tags; do
+            if [[ $tag == *"browser"* ]]; then
+              latest_browser_tag=$tag
+              break
+            fi
+          done
+          echo "latest_browser_tag=$latest_browser_tag" >> $GITHUB_OUTPUT
+          echo "Latest browser tag: $latest_browser_tag"
+
+      - name: Get Node Version
+        id: retrieve-node-version
+        working-directory: clients
+        run: |
+          NODE_NVMRC=$(cat .nvmrc)
+          NODE_VERSION=${NODE_NVMRC/v/''}
+          echo "node_version=$NODE_VERSION" >> $GITHUB_OUTPUT
+          echo "Node version: $NODE_VERSION"
+
+  build:
+    name: Build
+    runs-on: ubuntu-22.04
+    needs: setup
+    env:
+      _LATEST_BROWSER_TAG: ${{ needs.setup.outputs.latest_browser_tag }}
+      _NODE_VERSION: ${{ needs.setup.outputs.node_version }}
+    strategy:
+      matrix:
+        include:
+          - name: "chrome"
+            npm_command: "dist:chrome"
+            archive_name: "dist-chrome.zip"
+          - name: "firefox"
+            npm_command: "dist:firefox"
+            archive_name: "dist-firefox.zip"
+          - name: "edge"
+            npm_command: "dist:edge"
+            archive_name: "dist-edge.zip"
+          - name: "opera"
+            npm_command: "dist:opera"
+            archive_name: "dist-opera.zip"
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Clone Bitwarden clients
+        run: git clone https://github.com/bitwarden/clients.git
+
+      - name: Setup repo
+        working-directory: clients
+        run: |
+          git fetch --tags
+          echo "Checking out ${{ env._LATEST_BROWSER_TAG }}"
+          git checkout ${{ env._LATEST_BROWSER_TAG }}
+
+      - name: Apply fakePremium patch
+        run: |
+          cp patches/fakePremium.patch clients/
+          cd clients
+          git apply fakePremium.patch -v
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          cache: "npm"
+          cache-dependency-path: "**/package-lock.json"
+          node-version: ${{ env._NODE_VERSION }}
+
+      - name: Print environment
+        run: |
+          node --version
+          npm --version
+
+      - name: NPM setup
+        working-directory: clients
+        run: npm ci
+
+      - name: Build extension (${{ matrix.name }})
+        working-directory: clients/apps/browser
+        run: npm run ${{ matrix.npm_command }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}-${{ env._LATEST_BROWSER_TAG }}
+          path: clients/apps/browser/dist/${{ matrix.archive_name }}
+          if-no-files-found: error
+
+  release:
+    name: Release
+    runs-on: ubuntu-22.04
+    needs:
+      - setup
+      - build
+    env:
+      _LATEST_BROWSER_TAG: ${{ needs.setup.outputs.latest_browser_tag }}
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -la artifacts/
+
+      - name: Create release
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: "artifacts/*"
+          tag: "${{ env._LATEST_BROWSER_TAG }}"
+          name: "${{ env._LATEST_BROWSER_TAG }}"
+          body: "${{ env._LATEST_BROWSER_TAG }} - Bitwarden Browser Extension with Premium Patch\n\n[Original Changelog](https://github.com/bitwarden/clients/releases/tag/${{ env._LATEST_BROWSER_TAG }})"
+          token: ${{ secrets.GITHUB_TOKEN }}
+          draft: false
+          allowUpdates: true
+          makeLatest: true
