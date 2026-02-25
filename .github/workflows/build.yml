@@ -28,7 +28,7 @@ jobs:
       skip_build: ${{ steps.check_release.outputs.skip_build }}
     steps:
       - name: Check out repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Get Latest Browser Tag (via API)
         id: gen_vars
@@ -90,7 +90,7 @@ jobs:
             archive_name: "dist-opera.zip"
     steps:
       - name: Check out repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Clone Bitwarden clients
         run: git clone https://github.com/bitwarden/clients.git
@@ -155,7 +155,7 @@ jobs:
       _LATEST_BROWSER_TAG: ${{ needs.setup.outputs.latest_browser_tag }}
     steps:
       - name: Check out repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Clone Bitwarden clients
         run: git clone https://github.com/bitwarden/clients.git
