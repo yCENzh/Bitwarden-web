@@ -24,37 +24,30 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       latest_browser_tag: ${{ steps.gen_vars.outputs.latest_browser_tag }}
-      node_version: ${{ steps.retrieve-node-version.outputs.node_version }}
+      node_version: ${{ steps.get_node_version.outputs.node_version }}
       skip_build: ${{ steps.check_release.outputs.skip_build }}
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
 
-      - name: Clone Bitwarden clients
-        run: git clone https://github.com/bitwarden/clients.git
-
-      - name: Get Latest Browser Tag
+      - name: Get Latest Browser Tag (via API)
         id: gen_vars
-        working-directory: clients
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git fetch --tags
-          tags=$(git tag --sort=-creatordate)
-          latest_browser_tag=""
-          for tag in $tags; do
-            if [[ $tag == *"browser"* ]]; then
-              latest_browser_tag=$tag
-              break
-            fi
-          done
+          # Get all tags from Bitwarden clients repo via GitHub API
+          latest_browser_tag=$(gh api repos/bitwarden/clients/tags --paginate --jq '.[].name' | grep -i browser | head -1)
           echo "latest_browser_tag=$latest_browser_tag" >> $GITHUB_OUTPUT
           echo "Latest browser tag: $latest_browser_tag"
 
-      - name: Get Node Version
-        id: retrieve-node-version
-        working-directory: clients
+      - name: Get Node Version (via API)
+        id: get_node_version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          NODE_NVMRC=$(cat .nvmrc)
-          NODE_VERSION=${NODE_NVMRC/v/''}
+          # Get .nvmrc content from Bitwarden clients repo via GitHub API
+          nvmrc=$(gh api repos/bitwarden/clients/contents/.nvmrc --jq '.content' | base64 -d)
+          NODE_VERSION=${nvmrc/v/''}
           echo "node_version=$NODE_VERSION" >> $GITHUB_OUTPUT
           echo "Node version: $NODE_VERSION"
 
