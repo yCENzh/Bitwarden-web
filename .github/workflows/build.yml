@@ -25,6 +25,7 @@ jobs:
     outputs:
       latest_browser_tag: ${{ steps.gen_vars.outputs.latest_browser_tag }}
       node_version: ${{ steps.retrieve-node-version.outputs.node_version }}
+      skip_build: ${{ steps.check_release.outputs.skip_build }}
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
@@ -57,10 +58,25 @@ jobs:
           echo "node_version=$NODE_VERSION" >> $GITHUB_OUTPUT
           echo "Node version: $NODE_VERSION"
 
+      - name: Check if release exists
+        id: check_release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.gen_vars.outputs.latest_browser_tag }}"
+          if gh release view "$TAG" --repo "${{ github.repository }}" &>/dev/null; then
+            echo "skip_build=true" >> $GITHUB_OUTPUT
+            echo "::notice::Release $TAG already exists, skipping build"
+          else
+            echo "skip_build=false" >> $GITHUB_OUTPUT
+            echo "No existing release for $TAG, proceeding with build"
+          fi
+
   build:
     name: Build
     runs-on: ubuntu-22.04
     needs: setup
+    if: needs.setup.outputs.skip_build != 'true'
     env:
       _LATEST_BROWSER_TAG: ${{ needs.setup.outputs.latest_browser_tag }}
       _NODE_VERSION: ${{ needs.setup.outputs.node_version }}
@@ -126,12 +142,75 @@ jobs:
           path: clients/apps/browser/dist/${{ matrix.archive_name }}
           if-no-files-found: error
 
+  pack-source:
+    name: Pack Source
+    runs-on: ubuntu-22.04
+    needs: setup
+    if: needs.setup.outputs.skip_build != 'true'
+    env:
+      _LATEST_BROWSER_TAG: ${{ needs.setup.outputs.latest_browser_tag }}
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Clone Bitwarden clients
+        run: git clone https://github.com/bitwarden/clients.git
+
+      - name: Setup repo
+        working-directory: clients
+        run: |
+          git fetch --tags
+          echo "Checking out ${{ env._LATEST_BROWSER_TAG }}"
+          git checkout ${{ env._LATEST_BROWSER_TAG }}
+
+      - name: Apply fakePremium patch
+        run: |
+          cp patches/fakePremium.patch clients/
+          cd clients
+          git apply fakePremium.patch -v
+
+      - name: Pack source code
+        working-directory: clients
+        run: |
+          # Include hidden files in glob copy
+          shopt -s dotglob
+
+          # Remove ".git" directory
+          rm -rf .git
+
+          # Create browser-source directory
+          mkdir browser-source
+
+          # Copy root level files
+          FILES=$(find . -maxdepth 1 -type f)
+          for FILE in $FILES; do cp "$FILE" browser-source/; done
+
+          # Copy apps/browser
+          mkdir -p browser-source/apps/browser
+          cp -r apps/browser/* browser-source/apps/browser/
+
+          # Copy libs
+          mkdir browser-source/libs
+          cp -r libs/* browser-source/libs/
+
+          # Create zip
+          zip -r browser-source.zip browser-source
+
+      - name: Upload source artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-source-${{ env._LATEST_BROWSER_TAG }}
+          path: clients/browser-source.zip
+          if-no-files-found: error
+
   release:
     name: Release
     runs-on: ubuntu-22.04
     needs:
       - setup
       - build
+      - pack-source
+    if: needs.setup.outputs.skip_build != 'true'
     env:
       _LATEST_BROWSER_TAG: ${{ needs.setup.outputs.latest_browser_tag }}
     steps:
