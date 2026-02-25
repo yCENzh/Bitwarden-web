@@ -115,6 +115,17 @@ jobs:
           cd clients
           git apply fakePremium.patch -v
 
+      - name: Cache npm dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            clients/node_modules
+            clients/**/node_modules
+          key: npm-${{ env._LATEST_BROWSER_TAG }}-${{ hashFiles('clients/**/package-lock.json') }}
+          restore-keys: |
+            npm-${{ env._LATEST_BROWSER_TAG }}-
+            npm-
+
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
