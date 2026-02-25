@@ -120,7 +120,7 @@ jobs:
             npm-
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           cache: "npm"
           cache-dependency-path: "**/package-lock.json"
