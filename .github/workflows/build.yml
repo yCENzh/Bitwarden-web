@@ -140,7 +140,7 @@ jobs:
         run: npm run ${{ matrix.npm_command }}
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.name }}-${{ env._LATEST_BROWSER_TAG }}
           path: clients/apps/browser/dist/${{ matrix.archive_name }}
@@ -201,7 +201,7 @@ jobs:
           zip -r browser-source.zip browser-source
 
       - name: Upload source artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: browser-source-${{ env._LATEST_BROWSER_TAG }}
           path: clients/browser-source.zip
