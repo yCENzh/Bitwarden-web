@@ -14,5 +14,3 @@ updates:
     labels:
       - "dependencies"
       - "github-actions"
-    reviewers: []
-    assignees: []
